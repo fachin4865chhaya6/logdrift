@@ -42,6 +42,20 @@ class Deduplicator:
         self._seen[key] = now
         return False
 
+    def stats(self) -> dict:
+        """Return current cache statistics.
+
+        Returns a dict with:
+          - ``tracked``: number of lines currently tracked in the window
+          - ``window_seconds``: the configured deduplication window
+          - ``max_cache_size``: the configured maximum cache size
+        """
+        return {
+            "tracked": len(self._seen),
+            "window_seconds": self.window_seconds,
+            "max_cache_size": self.max_cache_size,
+        }
+
     def reset(self) -> None:
         """Clear all tracked lines."""
         self._seen.clear()
