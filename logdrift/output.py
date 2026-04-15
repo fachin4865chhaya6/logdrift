@@ -1,102 +1,94 @@
-"""Output handling for logdrift.
+"""Output module: coordinates reading, filtering, redacting, and writing log lines."""
 
-Responsible for writing filtered and formatted log lines
-to the appropriate stream, updating stats, and printing summaries.
-"""
-
+import json
 import sys
-from typing import Optional, TextIO
+from typing import Any, Dict, List, Optional
 
 from logdrift.formatter import format_line
-from logdrift.highlighter import highlight_keywords
-from logdrift.stats import LogStats, record_line, format_summary
+from logdrift.highlighter import highlight_keywords, parse_highlight_keywords
+from logdrift.parser import filter_line, parse_line
+from logdrift.redactor import redact_line
 from logdrift.sampler import Sampler
+from logdrift.stats import LogStats, format_summary, record_line
+from logdrift.tailer import tail_file
 
 
-def _get_output_stream(output_file: Optional[str]) -> TextIO:
-    """Return a writable stream: a file if path given, else stdout."""
-    if output_file:
-        return open(output_file, "a", encoding="utf-8")
+def _get_output_stream():
     return sys.stdout
 
 
 def write_line(
     raw: str,
-    matched: bool,
+    stream,
     stats: LogStats,
-    stream: TextIO,
-    keywords: Optional[list] = None,
-    color: bool = True,
-    sampler: Optional[Sampler] = None,
+    highlight_kws: list,
+    redact_fields: List[str],
+    redact_patterns: List[str],
+    matched: bool,
+    parsed: Optional[Dict[str, Any]],
 ) -> None:
-    """Write a single log line to the stream if matched and sampled.
-
-    Args:
-        raw: The raw log line string.
-        matched: Whether the line passed all filters.
-        stats: LogStats instance to update.
-        stream: Output stream to write to.
-        keywords: Optional list of keywords to highlight.
-        color: Whether to apply color formatting.
-        sampler: Optional Sampler to sub-sample matched lines.
-    """
     if not matched:
-        record_line(stats, raw, matched=False)
+        record_line(stats, matched=False, level=None)
         return
 
-    if sampler is not None and not sampler.should_keep():
-        record_line(stats, raw, matched=False)
-        return
+    raw, parsed = redact_line(raw, parsed, redact_fields, redact_patterns)
+    formatted = format_line(raw, parsed)
+    if highlight_kws:
+        formatted = highlight_keywords(formatted, highlight_kws)
 
-    record_line(stats, raw, matched=True)
-    formatted = format_line(raw, color=color)
-    if keywords:
-        formatted = highlight_keywords(formatted, keywords, color=color)
+    level = None
+    if parsed and isinstance(parsed, dict):
+        level = parsed.get("level") or parsed.get("severity")
+
+    record_line(stats, matched=True, level=level)
     stream.write(formatted + "\n")
-    stream.flush()
 
 
-def write_summary(stats: LogStats, stream: TextIO) -> None:
-    """Write a formatted stats summary to the given stream."""
-    summary = format_summary(stats)
-    stream.write(summary + "\n")
-    stream.flush()
+def write_summary(stats: LogStats, stream) -> None:
+    stream.write(format_summary(stats) + "\n")
 
 
 def run_output(
-    lines,
-    stats: LogStats,
-    output_file: Optional[str] = None,
-    keywords: Optional[list] = None,
-    color: bool = True,
+    filepath: str,
+    follow: bool = False,
+    regex: Optional[str] = None,
+    json_filter: Optional[Dict[str, str]] = None,
+    level: Optional[str] = None,
+    highlight: Optional[str] = None,
     sampler: Optional[Sampler] = None,
-    show_summary: bool = False,
+    show_stats: bool = False,
+    redact_fields: Optional[List[str]] = None,
+    redact_patterns: Optional[List[str]] = None,
 ) -> None:
-    """Process an iterable of (raw_line, matched) tuples and write output.
+    stream = _get_output_stream()
+    stats = LogStats()
+    highlight_kws = parse_highlight_keywords(highlight)
+    redact_fields = redact_fields or []
+    redact_patterns = redact_patterns or []
 
-    Args:
-        lines: Iterable of (raw_line: str, matched: bool) tuples.
-        stats: LogStats instance to track counts.
-        output_file: Optional path to write output to instead of stdout.
-        keywords: Optional list of highlight keywords.
-        color: Whether to apply color formatting.
-        sampler: Optional Sampler for sub-sampling matched lines.
-        show_summary: If True, print stats summary after processing.
-    """
-    stream = _get_output_stream(output_file)
-    try:
-        for raw, matched in lines:
-            write_line(
-                raw,
-                matched=matched,
-                stats=stats,
-                stream=stream,
-                keywords=keywords,
-                color=color,
-                sampler=sampler,
-            )
-        if show_summary:
-            write_summary(stats, stream=sys.stderr)
-    finally:
-        if output_file and not stream.closed:
-            stream.close()
+    for raw in tail_file(filepath, follow=follow):
+        if sampler and not sampler.should_keep():
+            continue
+
+        parsed = parse_line(raw)
+        matched = filter_line(
+            raw,
+            parsed,
+            regex=regex,
+            json_filter=json_filter,
+            level=level,
+        )
+
+        write_line(
+            raw=raw,
+            stream=stream,
+            stats=stats,
+            highlight_kws=highlight_kws,
+            redact_fields=redact_fields,
+            redact_patterns=redact_patterns,
+            matched=matched,
+            parsed=parsed,
+        )
+
+    if show_stats:
+        write_summary(stats, stream)
