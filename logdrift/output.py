@@ -1,94 +1,100 @@
-"""Output module: coordinates reading, filtering, redacting, and writing log lines."""
+"""Output helpers for logdrift.
 
-import json
+Handles writing filtered/formatted lines to a stream, optional summary
+printing, and now optional per-second rate limiting via :class:`Throttle`.
+"""
+
+from __future__ import annotations
+
 import sys
-from typing import Any, Dict, List, Optional
+from typing import IO, Iterable, Optional
 
 from logdrift.formatter import format_line
-from logdrift.highlighter import highlight_keywords, parse_highlight_keywords
-from logdrift.parser import filter_line, parse_line
-from logdrift.redactor import redact_line
-from logdrift.sampler import Sampler
-from logdrift.stats import LogStats, format_summary, record_line
-from logdrift.tailer import tail_file
+from logdrift.highlighter import highlight_keywords
+from logdrift.stats import LogStats, record_line, format_summary
+from logdrift.throttle import Throttle
 
 
-def _get_output_stream():
+def _get_output_stream(path: Optional[str]) -> IO[str]:
+    """Return an open file handle for *path*, or *stdout* when path is None."""
+    if path:
+        return open(path, "a", encoding="utf-8")  # noqa: WPS515
     return sys.stdout
 
 
 def write_line(
-    raw: str,
-    stream,
-    stats: LogStats,
-    highlight_kws: list,
-    redact_fields: List[str],
-    redact_patterns: List[str],
+    line: str,
     matched: bool,
-    parsed: Optional[Dict[str, Any]],
+    stream: IO[str],
+    stats: LogStats,
+    keywords: Optional[list] = None,
+    colorize: bool = True,
+    throttle: Optional[Throttle] = None,
 ) -> None:
+    """Record *line* in *stats* and, if *matched*, write it to *stream*.
+
+    When a :class:`~logdrift.throttle.Throttle` is supplied and the current
+    rate exceeds the configured limit the line is silently dropped (counted
+    as skipped in stats).
+    """
+    record_line(stats, line, matched)
     if not matched:
-        record_line(stats, matched=False, level=None)
         return
 
-    raw, parsed = redact_line(raw, parsed, redact_fields, redact_patterns)
-    formatted = format_line(raw, parsed)
-    if highlight_kws:
-        formatted = highlight_keywords(formatted, highlight_kws)
+    if throttle is not None and not throttle.allow():
+        # Throttled lines are not written; already counted via record_line.
+        return
 
-    level = None
-    if parsed and isinstance(parsed, dict):
-        level = parsed.get("level") or parsed.get("severity")
-
-    record_line(stats, matched=True, level=level)
+    formatted = format_line(line, colorize=colorize)
+    if keywords:
+        formatted = highlight_keywords(formatted, keywords)
     stream.write(formatted + "\n")
+    stream.flush()
 
 
-def write_summary(stats: LogStats, stream) -> None:
+def write_summary(stats: LogStats, stream: IO[str]) -> None:
+    """Write a formatted summary of *stats* to *stream*."""
     stream.write(format_summary(stats) + "\n")
+    stream.flush()
 
 
 def run_output(
-    filepath: str,
-    follow: bool = False,
-    regex: Optional[str] = None,
-    json_filter: Optional[Dict[str, str]] = None,
-    level: Optional[str] = None,
-    highlight: Optional[str] = None,
-    sampler: Optional[Sampler] = None,
-    show_stats: bool = False,
-    redact_fields: Optional[List[str]] = None,
-    redact_patterns: Optional[List[str]] = None,
+    lines: Iterable[tuple[str, bool]],
+    stream: IO[str],
+    stats: LogStats,
+    keywords: Optional[list] = None,
+    colorize: bool = True,
+    show_summary: bool = False,
+    throttle: Optional[Throttle] = None,
 ) -> None:
-    stream = _get_output_stream()
-    stats = LogStats()
-    highlight_kws = parse_highlight_keywords(highlight)
-    redact_fields = redact_fields or []
-    redact_patterns = redact_patterns or []
+    """Consume *(line, matched)* pairs from *lines* and write matched ones.
 
-    for raw in tail_file(filepath, follow=follow):
-        if sampler and not sampler.should_keep():
-            continue
-
-        parsed = parse_line(raw)
-        matched = filter_line(
-            raw,
-            parsed,
-            regex=regex,
-            json_filter=json_filter,
-            level=level,
-        )
-
+    Parameters
+    ----------
+    lines:
+        Iterable of ``(raw_line, was_matched)`` tuples.
+    stream:
+        Output destination.
+    stats:
+        Mutable stats object updated for every line.
+    keywords:
+        Optional highlight keyword list.
+    colorize:
+        Whether to apply ANSI colour codes.
+    show_summary:
+        If *True*, print a stats summary after all lines are consumed.
+    throttle:
+        Optional rate limiter; dropped lines are not written to *stream*.
+    """
+    for line, matched in lines:
         write_line(
-            raw=raw,
-            stream=stream,
-            stats=stats,
-            highlight_kws=highlight_kws,
-            redact_fields=redact_fields,
-            redact_patterns=redact_patterns,
-            matched=matched,
-            parsed=parsed,
+            line,
+            matched,
+            stream,
+            stats,
+            keywords=keywords,
+            colorize=colorize,
+            throttle=throttle,
         )
-
-    if show_stats:
+    if show_summary:
         write_summary(stats, stream)
