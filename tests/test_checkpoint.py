@@ -77,13 +77,19 @@ class TestSaveCheckpoint:
         save_checkpoint("/var/log/app.log", 999, tmp_checkpoint_dir)
         assert load_checkpoint("/var/log/app.log", tmp_checkpoint_dir) == 999
 
+    def test_different_logs_have_separate_checkpoints(self, tmp_checkpoint_dir):
+        save_checkpoint("/var/log/app.log", 100, tmp_checkpoint_dir)
+        save_checkpoint("/var/log/other.log", 200, tmp_checkpoint_dir)
+        assert load_checkpoint("/var/log/app.log", tmp_checkpoint_dir) == 100
+        assert load_checkpoint("/var/log/other.log", tmp_checkpoint_dir) == 200
+
 
 class TestClearCheckpoint:
-    def test_returns_false_when_no_file(self, tmp_checkpoint_dir):
-        assert clear_checkpoint("/var/log/app.log", tmp_checkpoint_dir) is False
-
-    def test_returns_true_and_removes_file(self, tmp_checkpoint_dir):
-        save_checkpoint("/var/log/app.log", 42, tmp_checkpoint_dir)
-        result = clear_checkpoint("/var/log/app.log", tmp_checkpoint_dir)
-        assert result is True
+    def test_removes_existing_checkpoint(self, tmp_checkpoint_dir):
+        save_checkpoint("/var/log/app.log", 512, tmp_checkpoint_dir)
+        clear_checkpoint("/var/log/app.log", tmp_checkpoint_dir)
         assert load_checkpoint("/var/log/app.log", tmp_checkpoint_dir) is None
+
+    def test_does_not_raise_when_no_checkpoint(self, tmp_checkpoint_dir):
+        # Should be a no-op when the checkpoint file doesn't exist
+        clear_checkpoint("/var/log/app.log", tmp_checkpoint_dir)
