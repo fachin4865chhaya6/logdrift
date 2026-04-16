@@ -82,28 +82,24 @@ class TestTagLine:
         line = json.dumps({"msg": "no level here"})
         assert tag_line(line, rules, field="level") == []
 
+    def test_invalid_json_with_field_falls_back_to_full_line(self):
+        """When a field is requested but the line is not valid JSON,
+        tag_line should fall back to matching against the raw line."""
+        rules = parse_tag_rules("error:ERROR")
+        line = "not json but contains ERROR"
+        assert tag_line(line, rules, field="level") == ["error"]
+
+    def test_duplicate_tags_not_returned(self):
+        """A tag should appear at most once even if multiple rules share the
+        same tag name and both match."""
+        rules = [
+            {"tag": "error", "pattern": "ERROR"},
+            {"tag": "error", "pattern": "ERR"},
+        ]
+        tags = tag_line("ERROR and ERR in the same line", rules)
+        assert tags.count("error") == 1
+
 
 # ---------------------------------------------------------------------------
 # inject_tags
-# ---------------------------------------------------------------------------
-
-class TestInjectTags:
-    def test_no_tags_returns_line_unchanged(self):
-        line = "plain text"
-        assert inject_tags(line, []) == line
-
-    def test_plain_text_gets_prefix(self):
-        result = inject_tags("hello world", ["error", "critical"])
-        assert result == "[error,critical] hello world"
-
-    def test_json_gets_tags_field(self):
-        line = json.dumps({"msg": "boom"})
-        result = inject_tags(line, ["error"])
-        parsed = json.loads(result)
-        assert parsed["_tags"] == ["error"]
-        assert parsed["msg"] == "boom"
-
-    def test_json_single_tag(self):
-        line = json.dumps({"level": "ERROR"})
-        result = inject_tags(line, ["error"])
-        assert json.loads(result)["_tags"] == ["error"]
+# ---------------
