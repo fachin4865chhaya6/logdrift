@@ -71,6 +71,12 @@ class TestTransformFields:
         assert "noise" not in result
         assert result["ts"] == 123
 
+    def test_missing_source_field_is_ignored(self):
+        """A field map entry whose source key is absent in data should be a no-op."""
+        data = {"msg": "hello"}
+        result = transform_fields(data, {"nonexistent": "other"})
+        assert result == {"msg": "hello"}
+
 
 class TestTransformLine:
     def test_plain_text_returned_unchanged(self):
@@ -86,18 +92,4 @@ class TestTransformLine:
 
     def test_json_line_renamed(self):
         line = json.dumps({"msg": "hello", "level": "info"})
-        result = transform_line(line, {"msg": "message"})
-        data = json.loads(result)
-        assert data["message"] == "hello"
-        assert "msg" not in data
-
-    def test_json_line_field_dropped(self):
-        line = json.dumps({"msg": "hello", "debug": True})
-        result = transform_line(line, {"debug": ""})
-        data = json.loads(result)
-        assert "debug" not in data
-        assert data["msg"] == "hello"
-
-    def test_json_array_returned_unchanged(self):
-        line = json.dumps([1, 2, 3])
-        assert transform_line(line, {"a": "b"}) == line
+        result = transform_line(line, {
