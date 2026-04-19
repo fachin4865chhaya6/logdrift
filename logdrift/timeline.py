@@ -42,6 +42,16 @@ class Timeline:
         self._buckets[bucket] += 1
         return bucket
 
+    def total_count(self) -> int:
+        """Return the total number of log lines added across all buckets."""
+        return sum(self._buckets.values())
+
+    def peak_bucket(self) -> Optional[int]:
+        """Return the bucket key with the highest count, or None if empty."""
+        if not self._buckets:
+            return None
+        return max(self._buckets, key=lambda k: self._buckets[k])
+
     def format_summary(self) -> List[str]:
         if not self._buckets:
             return ["timeline: no data"]
