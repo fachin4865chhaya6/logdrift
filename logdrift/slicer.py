@@ -1,70 +1,52 @@
-"""Field slicer: extract a substring or sub-list from JSON field values."""
-
 from __future__ import annotations
-
-import json
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any
+import json
 
 
 @dataclass
 class SliceRule:
-    """Describes how to slice a single field."""
-
     field: str
-    start: Optional[int]
-    stop: Optional[int]
-    step: Optional[int]
+    start: int | None
+    stop: int | None
 
     def __post_init__(self) -> None:
         if not self.field or not self.field.strip():
-            raise ValueError("SliceRule field must not be empty")
-        self.field = self.field.strip()
+            raise ValueError("field must not be empty")
+        if self.start is None and self.stop is None:
+            raise ValueError("at least one of start or stop must be set")
 
     def apply(self, value: Any) -> Any:
-        """Apply the slice to *value* if it supports slicing; return it unchanged otherwise."""
-        if isinstance(value, (str, list)):
-            return value[self.start : self.stop : self.step]
-        return value
+        if not isinstance(value, (str, list)):
+            return value
+        return value[self.start:self.stop]
 
 
-def parse_slice_rules(spec: Optional[str]) -> List[SliceRule]:
-    """Parse a comma-separated list of slice specs.
-
-    Each spec has the form::
-
-        field:start:stop[:step]
-
-    Any component except *field* may be omitted (empty string → ``None``).
-
-    Examples::
-
-        "message:0:100"          # first 100 chars of message
-        "tags:1:5,name:0:8:2"   # two rules
-    """
-    if not spec or not spec.strip():
+def parse_slice_rules(spec: str | None) -> list[SliceRule]:
+    if not spec:
         return []
-
-    rules: List[SliceRule] = []
+    rules: list[SliceRule] = []
     for part in spec.split(","):
         part = part.strip()
         if not part:
             continue
-        segments = part.split(":")
-        if len(segments) < 3:
-            raise ValueError(
-                f"Slice spec '{part}' must have at least field:start:stop"
-            )
-        field = segments[0].strip()
-        start = int(segments[1]) if segments[1].strip() else None
-        stop = int(segments[2]) if segments[2].strip() else None
-        step = int(segments[3]) if len(segments) > 3 and segments[3].strip() else None
-        rules.append(SliceRule(field=field, start=start, stop=stop, step=step))
+        if ":" not in part:
+            raise ValueError(f"invalid slice spec (missing ':'): {part!r}")
+        field_part, slice_part = part.split(":", 1)
+        field_part = field_part.strip()
+        if not field_part:
+            raise ValueError(f"empty field in slice spec: {part!r}")
+        if ".." in slice_part:
+            start_s, stop_s = slice_part.split("..", 1)
+        else:
+            start_s, stop_s = slice_part, ""
+        start = int(start_s) if start_s.strip() else None
+        stop = int(stop_s) if stop_s.strip() else None
+        rules.append(SliceRule(field=field_part, start=start, stop=stop))
     return rules
 
 
-def slice_json_fields(data: dict, rules: List[SliceRule]) -> dict:
-    """Return a copy of *data* with slice rules applied."""
+def slice_json_fields(data: dict, rules: list[SliceRule]) -> dict:
     result = dict(data)
     for rule in rules:
         if rule.field in result:
@@ -72,8 +54,7 @@ def slice_json_fields(data: dict, rules: List[SliceRule]) -> dict:
     return result
 
 
-def slice_line(raw: str, rules: List[SliceRule]) -> str:
-    """Apply *rules* to *raw* if it is a JSON object; return *raw* unchanged otherwise."""
+def slice_line(raw: str, rules: list[SliceRule]) -> str:
     if not rules:
         return raw
     try:
