@@ -34,6 +34,19 @@ class TestZipRule:
         result = rule.apply(data)
         assert result["z"] == [10, None]
 
+    def test_apply_does_not_mutate_input(self):
+        rule = ZipRule(sources=["a", "b"], dest="zipped")
+        data = {"a": 1, "b": 2}
+        original = dict(data)
+        rule.apply(data)
+        assert data == original
+
+    def test_apply_single_source(self):
+        rule = ZipRule(sources=["a"], dest="wrapped")
+        data = {"a": 42}
+        result = rule.apply(data)
+        assert result["wrapped"] == [42]
+
 
 class TestParseZipRules:
     def test_none_returns_empty(self):
