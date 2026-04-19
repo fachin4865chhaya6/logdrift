@@ -51,6 +51,20 @@ def matches_regex_filter(line: str, pattern: str) -> bool:
     return bool(re.search(pattern, line))
 
 
+def extract_fields(line: str, fields: list[str]) -> dict:
+    """
+    Extract specific fields from a JSON log line.
+
+    Returns a dict with the requested fields and their values.
+    Fields that are missing from the parsed JSON will be omitted.
+    Returns an empty dict if the line is not valid JSON.
+    """
+    parsed = parse_line(line)
+    if parsed is None:
+        return {}
+    return {field: value for field in fields if (value := get_json_path_value(parsed, field)) is not None}
+
+
 def filter_line(
     line: str,
     regex: Optional[str] = None,
