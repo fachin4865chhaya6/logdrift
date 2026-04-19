@@ -75,6 +75,10 @@ class TestCorrelator:
         c = Correlator(corr_field="request_id")
         assert c.get_group("nonexistent") == []
 
+    def test_unknown_key_group_size_is_zero(self):
+        c = Correlator(corr_field="request_id")
+        assert c.group_size("nonexistent") == 0
+
 
 class TestParseCorrField:
     def test_none_returns_none(self):
@@ -86,8 +90,8 @@ class TestParseCorrField:
     def test_whitespace_only_returns_none(self):
         assert parse_corr_field("   ") is None
 
-    def test_valid_field_returned(self):
-        assert parse_corr_field("request_id") == "request_id"
+    def test_valid_string_returns_stripped(self):
+        assert parse_corr_field("  request_id  ") == "request_id"
 
-    def test_strips_whitespace(self):
-        assert parse_corr_field("  trace_id  ") == "trace_id"
+    def test_valid_string_no_whitespace(self):
+        assert parse_corr_field("request_id") == "request_id"
