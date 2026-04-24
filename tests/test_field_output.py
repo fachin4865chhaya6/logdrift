@@ -19,6 +19,14 @@ def test_make_field_selector_returns_list():
     assert make_field_selector("level,msg") == ["level", "msg"]
 
 
+def test_make_field_selector_strips_whitespace():
+    assert make_field_selector("level, msg , ts") == ["level", "msg", "ts"]
+
+
+def test_make_field_selector_single_field():
+    assert make_field_selector("level") == ["level"]
+
+
 def test_apply_field_selection_no_fields_unchanged():
     raw, parsed = _line({"a": 1, "b": 2})
     r, p = apply_field_selection(raw, parsed, [])
@@ -43,3 +51,10 @@ def test_apply_field_selection_missing_fields_omitted():
     raw, parsed = _line({"a": 1})
     r, p = apply_field_selection(raw, parsed, ["b"])
     assert p == {}
+
+
+def test_apply_field_selection_multiple_fields():
+    raw, parsed = _line({"level": "info", "msg": "hello", "ts": 123, "caller": "main.go"})
+    r, p = apply_field_selection(raw, parsed, ["level", "msg"])
+    assert p == {"level": "info", "msg": "hello"}
+    assert json.loads(r) == {"level": "info", "msg": "hello"}
