@@ -41,12 +41,27 @@ def redact_patterns(
     pattern_names: List[str],
     mask: str = DEFAULT_MASK,
 ) -> str:
-    """Replace occurrences of named built-in patterns inside *text* with *mask*."""
+    """Replace occurrences of named built-in patterns inside *text* with *mask*.
+
+    Unknown pattern names are silently ignored. Use ``list_builtin_patterns()``
+    to inspect which names are available.
+    """
     for name in pattern_names:
         pattern = _BUILTIN_PATTERNS.get(name)
         if pattern:
             text = re.sub(pattern, mask, text)
     return text
+
+
+def list_builtin_patterns() -> List[str]:
+    """Return the names of all available built-in redaction patterns.
+
+    Example::
+
+        >>> list_builtin_patterns()
+        ['email', 'ipv4', 'bearer', 'credit_card']
+    """
+    return list(_BUILTIN_PATTERNS.keys())
 
 
 def parse_redact_patterns(patterns_str: Optional[str]) -> List[str]:
