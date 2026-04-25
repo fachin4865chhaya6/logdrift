@@ -39,8 +39,20 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
 
     try:
         data = _load_json_file(config_path)
-    except (json.JSONDecodeError, OSError) as exc:
-        raise ValueError(f"Failed to load config from {config_path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Failed to parse config file {config_path} as JSON: {exc}"
+        ) from exc
+    except OSError as exc:
+        raise ValueError(
+            f"Failed to read config file {config_path}: {exc}"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Config file {config_path} must contain a JSON object at the top level, "
+            f"got {type(data).__name__}"
+        )
 
     return data
 
