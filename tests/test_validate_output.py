@@ -17,6 +17,11 @@ def test_make_validation_rules_returns_rules():
     assert len(rules) == 1
 
 
+def test_make_validation_rules_multiple_rules():
+    rules = make_validation_rules("level:INFO,service:auth")
+    assert len(rules) == 2
+
+
 def test_apply_validation_no_rules_returns_raw():
     raw = _line(level="DEBUG")
     result = apply_validation(raw, [])
@@ -54,3 +59,13 @@ def test_apply_validation_drop_invalid_valid_line_kept():
     result = apply_validation(raw, rules, drop_invalid=True, warn_stream=stream)
     assert result == raw
     assert stream.getvalue() == ""
+
+
+def test_apply_validation_missing_field_warns():
+    """A line missing the validated field entirely should trigger a warning."""
+    rules = make_validation_rules("level:INFO:missing-field")
+    raw = _line(service="auth")  # no 'level' key
+    stream = io.StringIO()
+    result = apply_validation(raw, rules, warn_stream=stream)
+    assert result == raw
+    assert "missing-field" in stream.getvalue()
